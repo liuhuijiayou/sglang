@@ -935,6 +935,7 @@ class FlashInferIndicesUpdaterDecode:
         self.kv_last_page_len = attn_backend.kv_last_page_len
         self.req_to_token = model_runner.req_to_token_pool.req_to_token
         self.token_to_kv_pool_allocator = model_runner.token_to_kv_pool_allocator
+        self.token_to_kv_pool = model_runner.token_to_kv_pool
 
         # Dispatch the update function
         if self.attn_backend.dispatch_reason == WrapperDispatch.SLIDING_WINDOW:
