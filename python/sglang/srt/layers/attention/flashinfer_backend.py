@@ -1122,17 +1122,8 @@ class FlashInferIndicesUpdaterDecode:
         # Notify the KV pool which positions will be read (for selective dequant).
         kv_last_index = kv_indptr[-1]
         if hasattr(self.token_to_kv_pool, "set_active_kv_indices"):
-            logger.info(
-                "FlashInfer decode: calling set_active_kv_indices with %d indices",
-                kv_last_index,
-            )
             self.token_to_kv_pool.set_active_kv_indices(
                 kv_indices[:kv_last_index]
-            )
-        else:
-            logger.warning(
-                "FlashInfer decode: token_to_kv_pool has NO set_active_kv_indices (type=%s)",
-                type(self.token_to_kv_pool).__name__,
             )
 
         global global_override_indptr_cpu
@@ -1213,6 +1204,7 @@ class FlashInferIndicesUpdaterPrefill:
         self.qo_indptr = attn_backend.qo_indptr
         self.req_to_token = model_runner.req_to_token_pool.req_to_token
         self.token_to_kv_pool_allocator = model_runner.token_to_kv_pool_allocator
+        self.token_to_kv_pool = model_runner.token_to_kv_pool
         self.prefill_wrapper_ragged = attn_backend.prefill_wrapper_ragged
 
         # Dispatch the update function
@@ -1458,6 +1450,13 @@ class FlashInferIndicesUpdaterPrefill:
             token_pos_in_items_ptr = None
             token_pos_in_items_len = 0
             max_item_len_ptr = None
+
+        # Notify the KV pool which positions will be read (for selective dequant).
+        kv_last_index = kv_indptr[-1]
+        if hasattr(self.token_to_kv_pool, "set_active_kv_indices"):
+            self.token_to_kv_pool.set_active_kv_indices(
+                kv_indices[:kv_last_index]
+            )
 
         wrapper_paged.begin_forward(
             qo_indptr,

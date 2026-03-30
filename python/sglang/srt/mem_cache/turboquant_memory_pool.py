@@ -9,14 +9,10 @@ Reads use selective dequantization: only the active token positions
 This gives O(active_tokens) reads with real memory savings (~3.76x at 4-bit).
 """
 
-import logging
-import time
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Optional
 
 import torch
-
-logger = logging.getLogger(__name__)
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.layers.quantization.turboquant_kernels import (
@@ -262,17 +258,12 @@ class MHATokenToKVPoolTurboQuant(MHATokenToKVPool):
         Called by the attention backend after begin_forward() computes kv_indices.
         Only these positions are dequantized in _get_key_buffer/_get_value_buffer.
         """
-        logger.info(
-            "TQ set_active_kv_indices: %d indices",
-            indices.numel(),
-        )
         self._active_indices = indices
 
     # ── Read path: selective dequant into shared workspace ──
 
     def _dequant_positions(self, layer_id: int, which: str):
         """Dequant active positions for one layer into the shared workspace."""
-        t0 = time.perf_counter()
         idx = layer_id - self.start_layer
         indices = self._active_indices
 
@@ -293,14 +284,12 @@ class MHATokenToKVPoolTurboQuant(MHATokenToKVPool):
             sel_packed = packed[unique_indices]   # (n_active, heads, packed_dim)
             sel_norms = norms[unique_indices]     # (n_active, heads) or (n_active, heads, 2)
             n_active = unique_indices.shape[0]
-            path = "selective"
         else:
             # Fallback: dequant everything (slow, but correct)
             sel_packed = packed
             sel_norms = norms
             unique_indices = None
             n_active = packed.shape[0]
-            path = "FULL_FALLBACK"
 
         # Flatten for dequant: (n_active * heads, packed_dim)
         flat_packed = sel_packed.reshape(-1, sel_packed.shape[-1])
@@ -342,13 +331,6 @@ class MHATokenToKVPoolTurboQuant(MHATokenToKVPool):
         else:
             ws[:n_active] = recon
 
-        torch.cuda.synchronize()
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(
-            "TQ _dequant_positions: layer=%d which=%s path=%s n_active=%d pool_size=%d elapsed=%.2fms",
-            layer_id, which, path, n_active, packed.shape[0], elapsed_ms,
-        )
-
     def _get_key_buffer(self, layer_id: int):
         """Dequant active positions into shared workspace and return it."""
         self._dequant_positions(layer_id, "k")
@@ -372,7 +354,6 @@ class MHATokenToKVPoolTurboQuant(MHATokenToKVPool):
         layer_id_override: Optional[int] = None,
     ):
         """Quantize and store compressed KV entries."""
-        t0 = time.perf_counter()
         layer_id = layer_id_override if layer_id_override is not None else layer.layer_id
         idx = layer_id - self.start_layer
         num_tokens = cache_k.shape[0]
@@ -417,13 +398,6 @@ class MHATokenToKVPoolTurboQuant(MHATokenToKVPool):
             self.v_qjl_buffer[idx][loc] = v_q["qjl_signs"].reshape(num_tokens, self.head_num, -1)
             self.k_residual_norms_buffer[idx][loc] = k_q["residual_norms"].reshape(num_tokens, self.head_num)
             self.v_residual_norms_buffer[idx][loc] = v_q["residual_norms"].reshape(num_tokens, self.head_num)
-
-        torch.cuda.synchronize()
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(
-            "TQ set_kv_buffer: layer=%d num_tokens=%d mixed=%s elapsed=%.2fms",
-            layer_id, num_tokens, self.is_mixed, elapsed_ms,
-        )
 
     def move_kv_cache(self, tgt_loc: torch.Tensor, src_loc: torch.Tensor):
         if tgt_loc.numel() == 0:
