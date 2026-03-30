@@ -1122,8 +1122,17 @@ class FlashInferIndicesUpdaterDecode:
         # Notify the KV pool which positions will be read (for selective dequant).
         kv_last_index = kv_indptr[-1]
         if hasattr(self.token_to_kv_pool, "set_active_kv_indices"):
+            logger.info(
+                "FlashInfer decode: calling set_active_kv_indices with %d indices",
+                kv_last_index,
+            )
             self.token_to_kv_pool.set_active_kv_indices(
                 kv_indices[:kv_last_index]
+            )
+        else:
+            logger.warning(
+                "FlashInfer decode: token_to_kv_pool has NO set_active_kv_indices (type=%s)",
+                type(self.token_to_kv_pool).__name__,
             )
 
         global global_override_indptr_cpu
