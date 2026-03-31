@@ -327,6 +327,7 @@ class ServerArgs:
     quantization: Optional[str] = None
     quantization_param_path: Optional[str] = None
     kv_cache_dtype: str = "auto"
+    turboquant_variant: str = "mse"
     enable_fp32_lm_head: bool = False
     modelopt_quant: Optional[Union[str, Dict]] = None
     modelopt_checkpoint_restore_path: Optional[str] = None
@@ -3557,6 +3558,13 @@ class ServerArgs:
             self.disable_cuda_graph = True
             self.skip_server_warmup = True
 
+        # TurboQuant KV cache: disable all CUDA graphs (decode + piecewise prefill).
+        # TurboQuant's decompress involves Python-dependent control flow that is
+        # incompatible with CUDA graph capture/replay.
+        if self.kv_cache_dtype and self.kv_cache_dtype.startswith("turboquant_"):
+            self.disable_cuda_graph = True
+            self.disable_piecewise_cuda_graph = True
+
         # Validate limit_mm_per_prompt modalities
         if self.limit_mm_data_per_request:
             if isinstance(self.limit_mm_data_per_request, str):
@@ -3813,8 +3821,27 @@ class ServerArgs:
             "--kv-cache-dtype",
             type=str,
             default=ServerArgs.kv_cache_dtype,
-            choices=["auto", "fp8_e5m2", "fp8_e4m3", "bf16", "bfloat16", "fp4_e2m1"],
-            help='Data type for kv cache storage. "auto" will use model data type. "bf16" or "bfloat16" for BF16 KV cache. "fp8_e5m2" and "fp8_e4m3" are supported for CUDA 11.8+. "fp4_e2m1" (only mxfp4) is supported for CUDA 12.8+ and PyTorch 2.8.0+',
+            choices=[
+                "auto",
+                "fp8_e5m2",
+                "fp8_e4m3",
+                "bf16",
+                "bfloat16",
+                "fp4_e2m1",
+                "turboquant_2bit",
+                "turboquant_2.5bit",
+                "turboquant_3bit",
+                "turboquant_3.5bit",
+                "turboquant_4bit",
+            ],
+            help='Data type for kv cache storage. "auto" will use model data type. "bf16" or "bfloat16" for BF16 KV cache. "fp8_e5m2" and "fp8_e4m3" are supported for CUDA 11.8+. "fp4_e2m1" (only mxfp4) is supported for CUDA 12.8+ and PyTorch 2.8.0+. "turboquant_Nbit" for experimental TurboQuant KV cache compression (N=2,2.5,3,3.5,4). Use --turboquant-variant to select mse (default) or prod.',
+        )
+        parser.add_argument(
+            "--turboquant-variant",
+            type=str,
+            default="mse",
+            choices=["mse", "prod"],
+            help='TurboQuant variant: "mse" (Algorithm 1, default) or "prod" (Algorithm 2, unbiased inner product).',
         )
         parser.add_argument(
             "--enable-fp32-lm-head",

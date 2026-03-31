@@ -336,6 +336,9 @@ class ModelRunner(ModelRunnerKVCacheMixin):
             server_args.speculative_algorithm
         )
         self.page_size = server_args.page_size
+        self.use_turboquant = False
+        self.turboquant_bits = 0.0
+        self.turboquant_variant = "mse"
         self.req_to_token_pool = req_to_token_pool
         self.token_to_kv_pool_allocator = token_to_kv_pool_allocator
         self.is_hybrid_swa = model_config.is_hybrid_swa
@@ -1851,6 +1854,25 @@ class ModelRunner(ModelRunnerKVCacheMixin):
                     f"--kv-cache-dtype falls back to 'auto' because this torch version does not support torch.float4_e2m1fn_x2"
                 )
                 self.kv_cache_dtype = self.dtype
+        elif self.server_args.kv_cache_dtype.startswith("turboquant_"):
+            # TurboQuant KV cache compression (experimental).
+            # The pool stores uint8 indices + fp16 norms internally, but the
+            # "logical" dtype for attention backends is the model's native dtype.
+            bits_str = (
+                self.server_args.kv_cache_dtype.replace("turboquant_", "").replace(
+                    "bit", ""
+                )
+            )
+            self.turboquant_bits = float(bits_str)
+            self.turboquant_variant = getattr(
+                self.server_args, "turboquant_variant", "mse"
+            )
+            self.use_turboquant = True
+            self.kv_cache_dtype = self.dtype
+            logger.info(
+                f"TurboQuant KV cache enabled: {self.turboquant_bits}-bit "
+                f"{self.turboquant_variant} (experimental)"
+            )
         else:
             raise ValueError(
                 f"Unsupported kv_cache_dtype: {self.server_args.kv_cache_dtype}."

@@ -1,0 +1,53 @@
+[
+  {
+    "bits": 2,
+    "head_dim": 128,
+    "num_kv_heads": 8,
+    "num_layers": 32,
+    "seq_len": 8192,
+    "fp16_per_head_K_bytes": 256,
+    "tq_per_head_K_bytes": 34,
+    "fp16_per_token_bytes": 4096,
+    "tq_per_token_bytes": 544,
+    "fp16_total_MB": 1024.0,
+    "tq_total_MB": 136.0,
+    "compression_ratio": 7.529411764705882,
+    "shared_overhead_KB": 64.02734375,
+    "packed_indices_bytes_per_head": 32,
+    "norm_bytes_per_head": 2
+  },
+  {
+    "bits": 3,
+    "head_dim": 128,
+    "num_kv_heads": 8,
+    "num_layers": 32,
+    "seq_len": 8192,
+    "fp16_per_head_K_bytes": 256,
+    "tq_per_head_K_bytes": 50,
+    "fp16_per_token_bytes": 4096,
+    "tq_per_token_bytes": 800,
+    "fp16_total_MB": 1024.0,
+    "tq_total_MB": 200.0,
+    "compression_ratio": 5.12,
+    "shared_overhead_KB": 64.05859375,
+    "packed_indices_bytes_per_head": 48,
+    "norm_bytes_per_head": 2
+  },
+  {
+    "bits": 4,
+    "head_dim": 128,
+    "num_kv_heads": 8,
+    "num_layers": 32,
+    "seq_len": 8192,
+    "fp16_per_head_K_bytes": 256,
+    "tq_per_head_K_bytes": 66,
+    "fp16_per_token_bytes": 4096,
+    "tq_per_token_bytes": 1056,
+    "fp16_total_MB": 1024.0,
+    "tq_total_MB": 264.0,
+    "compression_ratio": 3.878787878787879,
+    "shared_overhead_KB": 64.12109375,
+    "packed_indices_bytes_per_head": 64,
+    "norm_bytes_per_head": 2
+  }
+]

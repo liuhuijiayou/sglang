@@ -105,7 +105,43 @@ class ModelRunnerKVCacheMixin:
                 )
                 cell_size += indexer_size_per_token * num_layers * element_size
         else:
-            if self.model_config.is_hybrid_swa:
+            if getattr(self, "use_turboquant", False):
+                # TurboQuant: bit-packed indices + fp16 norms per head, for K and V
+                num_kv_heads = self.model_config.get_num_kv_heads(
+                    get_attention_tp_size()
+                )
+                head_dim = self.model_config.head_dim
+                bits = self.turboquant_bits
+                variant = getattr(self, "turboquant_variant", "mse")
+                is_integer = bits == int(bits)
+                if not is_integer:
+                    # Mixed precision: split into two groups
+                    import math
+                    b_low = int(math.floor(bits))
+                    b_high = b_low + 1
+                    n_high = int(round((bits - b_low) * head_dim))
+                    n_low = head_dim - n_high
+                    packed_bytes = (n_high * b_high + 7) // 8 + (n_low * b_low + 7) // 8
+                elif variant == "prod":
+                    # Prod: (b-1)-bit MSE packed + 1-bit QJL packed
+                    mse_bits = int(bits) - 1
+                    packed_bytes = ((head_dim * mse_bits + 7) // 8 if mse_bits > 0 else 0)
+                    packed_bytes += (head_dim + 7) // 8  # QJL sign bits
+                else:
+                    packed_bytes = (head_dim * int(bits) + 7) // 8
+                # norm_bytes: 2 for MSE/Mixed, 4 for Prod (input + residual)
+                norm_bytes = 4 if (is_integer and variant == "prod") else 2
+                # Compressed storage: per-layer, per-token
+                compressed_per_token = (
+                    num_kv_heads * (packed_bytes + norm_bytes) * 2 * num_layers
+                )
+                # Decompression buffer: shared across layers (one K+V pair in bf16).
+                # Must be included in cell_size to avoid OOM.
+                kv_size = torch._utils._element_size(self.kv_cache_dtype)
+                dequant_per_token = num_kv_heads * head_dim * kv_size * 2  # K+V
+                cell_size = compressed_per_token + dequant_per_token
+                return cell_size
+            elif self.model_config.is_hybrid_swa:
                 full_layers_num = len(self.model_config.full_attention_layer_ids)
                 swa_layers_num = len(self.model_config.swa_attention_layer_ids)
 
@@ -668,7 +704,28 @@ class ModelRunnerKVCacheMixin:
                     **extra_args,
                 )
             else:
-                if is_float4_e2m1fn_x2(self.kv_cache_dtype):
+                if getattr(self, "use_turboquant", False):
+                    from sglang.srt.layers.quantization.turboquant.kv_pool import (
+                        MHATokenToKVPoolTurboQuant,
+                    )
+
+                    self.token_to_kv_pool = MHATokenToKVPoolTurboQuant(
+                        self.max_total_num_tokens,
+                        page_size=self.page_size,
+                        dtype=self.kv_cache_dtype,
+                        head_num=self.model_config.get_num_kv_heads(
+                            get_attention_tp_size()
+                        ),
+                        head_dim=self.model_config.head_dim,
+                        layer_num=self.num_effective_layers,
+                        device=self.device,
+                        enable_memory_saver=self.server_args.enable_memory_saver,
+                        turboquant_bits=self.turboquant_bits,
+                        turboquant_variant=getattr(self, "turboquant_variant", "mse"),
+                        start_layer=self.start_layer,
+                        end_layer=self.end_layer,
+                    )
+                elif is_float4_e2m1fn_x2(self.kv_cache_dtype):
                     self.token_to_kv_pool = MHATokenToKVPoolFP4(
                         self.max_total_num_tokens,
                         page_size=self.page_size,
