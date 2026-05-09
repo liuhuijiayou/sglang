@@ -464,6 +464,11 @@ class Envs:
     SGLANG_ENABLE_SPEC_V2 = EnvBool(True)
     SGLANG_ENABLE_OVERLAP_PLAN_STREAM = EnvBool(False)
 
+    # PoC: drop spec-v2 D2H syncs for FA3 overlap upper-bound benchmarking.
+    # Bypasses eagle_info_v2 .cpu()/.item() and verify_done.synchronize().
+    # Only safe for FA3 backend + EAGLE-2 path; corrupts mamba/hisparse/multimodal.
+    SGLANG_POC_SPEC_V2_NO_SYNC = EnvBool(False)
+
     # Spec Config
     SGLANG_SPEC_ENABLE_STRICT_FILTER_CHECK = EnvBool(True)
     SGLANG_SPEC_NAN_DETECTION = EnvBool(False)

@@ -2389,6 +2389,13 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         if self.is_spec_v2:
             draft_input: EagleDraftInput = self.spec_info
             if draft_input.verify_done is not None:
+                if envs.SGLANG_POC_SPEC_V2_NO_SYNC.get():
+                    # PoC: drop the host-side wait. Callers of seq_lens_cpu /
+                    # seq_lens_sum will see stale (under-counted) values; FA3
+                    # path reads GPU seq_lens so kernel still correct. The
+                    # cross-stream race in disagg+overlap merge_batch is NOT
+                    # protected here — FA3 single-host benchmark only.
+                    return
                 draft_input.verify_done.synchronize()
 
     def filter_batch(
@@ -2441,7 +2448,11 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         self.seq_lens_cpu = self.seq_lens_cpu[keep_indices]
         self.orig_seq_lens = self.orig_seq_lens[keep_indices_device]
         self.out_cache_loc = None
-        self.seq_lens_sum = self.seq_lens.sum().item()
+        if envs.SGLANG_POC_SPEC_V2_NO_SYNC.get():
+            # PoC: avoid GPU->host sync. Use the (stale) host mirror sum.
+            self.seq_lens_sum = int(self.seq_lens_cpu.sum().item())
+        else:
+            self.seq_lens_sum = self.seq_lens.sum().item()
 
         if self.output_ids is not None:
             self.output_ids = self.output_ids[keep_indices_device]

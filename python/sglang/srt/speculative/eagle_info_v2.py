@@ -9,6 +9,7 @@ import triton
 import triton.language as tl
 
 from sglang.srt.distributed import get_tp_group
+from sglang.srt.environ import envs
 from sglang.srt.layers.dp_attention import (
     get_attention_tp_group,
     is_dp_attention_enabled,
@@ -170,9 +171,18 @@ class EagleDraftInputV2Mixin:
             bs,
         )
 
-        # FIXME(lsyin): make this sync optional
-        batch.seq_lens_cpu = batch.seq_lens.cpu()
-        batch.seq_lens_sum = batch.seq_lens_cpu.sum().item()
+        if envs.SGLANG_POC_SPEC_V2_NO_SYNC.get():
+            # PoC: skip D2H sync. seq_lens_cpu mirror was incremented by +1 in
+            # prepare_for_decode; that under-counts by (accept_lens - 1) per req.
+            # FA3 attention reads GPU seq_lens directly so kernel correctness is
+            # unaffected; KV-pool admission checks see a low estimate (safe — over-
+            # reject, never over-commit). Other backends / hisparse / mamba are
+            # broken under this flag.
+            batch.seq_lens_sum = int(batch.seq_lens_cpu.sum().item())
+        else:
+            # FIXME(lsyin): make this sync optional
+            batch.seq_lens_cpu = batch.seq_lens.cpu()
+            batch.seq_lens_sum = batch.seq_lens_cpu.sum().item()
 
     def prepare_for_v2_draft(
         self: EagleDraftInput,
